@@ -1,0 +1,99 @@
+## This docker-compose is just an example of how the backup container can be effectively utilized
+## Here's an example workflow of running "myapp", backing up data, restoring data, and running "myapp" again.
+##===========
+## Init env
+##===========
+#docker-compose build
+#docker-compose up -d myapp
+## Make significant changes to your application in some way
+
+#docker-compose stop
+
+##===========
+## Backup containers & clean env
+##===========
+## Note that `p` is added to the tar creation for preserving permissions
+#docker-compose up backup
+## Note that epoch is being used because it will not conflict with multiple backups in the same day
+## Remove all containers and volumes to demonstrate clean env
+#docker-compose rm -v
+
+##===========
+## Restore Env
+##===========
+## Launch and stop myapp
+#docker-compose up -d myapp
+## Show empty db
+#docker-compose stop
+## Restore data
+#docker-compose up restore
+
+
+## Restart env to show restored data
+## docker-compose up -d myapp
+##TA DA!
+
+myapp:
+  image: busybox
+  container_name: myapp
+  volumes_from:
+  - myapp_data
+
+myapp_data:
+  image: busybox
+  container_name: myapp_data
+  volumes:
+  - "/opt/example/data/container"
+
+postgres:
+  image: postgres
+  container_name: postgres
+  volumes_from:
+  - postgres_data
+
+postgres_data:
+  image: postgres:latest
+  volumes: 
+   - "/etc/postgresql"
+   - "/var/log/postgresql"
+   - "/var/lib/postgresql"
+  container_name: postgres_data
+  command: echo "Data container only"
+
+mongo:
+  image: mongo:latest
+  container_name: mongo
+  volumes_from:
+  - mongo_data
+
+mongo_data:
+  image: mongo:2.6
+  volumes:
+  - "/data/db"
+  container_name: mongo_data
+  command: echo "Data container only"
+
+backup:
+  build: backup
+  container_name: backup
+  volumes_from:
+  - myapp_data
+  - mongo_data
+  - postgres_data
+  volumes:
+  - "/var/run/docker.sock:/var/run/docker.sock"
+  environment:
+  - IMAGE_NAME=myapp_data_backup
+  privileged: true
+
+restore:
+  image: myapp_data_backup:linuxepoch
+  container_name: restore
+  volumes_from:
+  - timestream_data
+  - mongo_data
+  - postgres_data
+  volumes:
+  - "/var/run/docker.sock:/var/run/docker.sock"
+  ##Override command from backup container
+  command: tar pxvfz backup.tar.gz -C /
